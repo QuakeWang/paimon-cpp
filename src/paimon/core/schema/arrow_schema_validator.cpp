@@ -28,6 +28,7 @@
 #include "paimon/common/data/variant/variant_access_utils.h"
 #include "paimon/common/data/variant/variant_type_utils.h"
 #include "paimon/common/types/data_field.h"
+#include "paimon/common/types/data_type.h"
 #include "paimon/common/types/vector_type.h"
 #include "paimon/common/utils/checked_cast.h"
 #include "paimon/common/utils/decimal_utils.h"
@@ -210,11 +211,8 @@ Status ArrowSchemaValidator::ValidateField(const std::shared_ptr<arrow::Field>& 
         case arrow::Type::type::TIMESTAMP:
             break;
         case arrow::Type::type::TIME32:
-            if (checked_cast<const arrow::Time32Type&>(*field->type()).unit() !=
-                arrow::TimeUnit::MILLI) {
-                return Status::Invalid("Only millisecond TIME is supported: ",
-                                       field->type()->ToString());
-            }
+            PAIMON_RETURN_NOT_OK(
+                DataType::GetTimePrecision(field->type(), field->metadata()).status());
             break;
         case arrow::Type::type::DECIMAL128:
             PAIMON_RETURN_NOT_OK(DecimalUtils::CheckDecimalType(*field->type()));

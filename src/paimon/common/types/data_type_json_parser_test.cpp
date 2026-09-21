@@ -25,6 +25,7 @@
 #include "fmt/format.h"
 #include "gtest/gtest.h"
 #include "paimon/common/data/variant/variant_type_utils.h"
+#include "paimon/common/types/data_type.h"
 #include "paimon/common/utils/checked_cast.h"
 #include "paimon/common/utils/date_time_utils.h"
 #include "paimon/status.h"
@@ -245,6 +246,11 @@ TEST(DataTypeJsonParserTest, ParseTimeType) {
             ASSERT_OK_AND_ASSIGN(auto field, DataTypeJsonParser::ParseType("time", value));
             ASSERT_TRUE(field->type()->Equals(arrow::time32(arrow::TimeUnit::MILLI)));
             ASSERT_EQ(field->nullable(), nullable);
+            auto logical_type = DataType::Create(field->type(), nullable, field->metadata());
+            ASSERT_OK_AND_ASSIGN(auto serialized, logical_type->ToJsonString());
+            int32_t precision = type.find('(') == std::string::npos ? 0 : type[5] - '0';
+            ASSERT_EQ(serialized,
+                      fmt::format("\"TIME({}){}\"", precision, nullable ? "" : " NOT NULL"));
         }
     }
     for (const char* type : {"TIME(-1)", "TIME(10)", "TIME(2147483648)", "TIME()", "TIME(3, 0)",

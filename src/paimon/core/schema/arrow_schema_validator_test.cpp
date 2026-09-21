@@ -29,6 +29,7 @@
 #include "paimon/common/data/variant/variant_defs.h"
 #include "paimon/common/data/variant/variant_type_utils.h"
 #include "paimon/common/types/data_field.h"
+#include "paimon/common/types/data_type.h"
 #include "paimon/common/utils/date_time_utils.h"
 #include "paimon/testing/utils/testharness.h"
 
@@ -93,6 +94,20 @@ TEST(ArrowSchemaValidatorTest, TestTimeType) {
             }
         }
     }
+}
+
+TEST(ArrowSchemaValidatorTest, TestInvalidTimePrecision) {
+    for (const char* precision : {"", "-1", "10", "3x", "1.5", "2147483648"}) {
+        SCOPED_TRACE(precision);
+        auto field =
+            arrow::field("time", arrow::time32(arrow::TimeUnit::MILLI), true,
+                         arrow::KeyValueMetadata::Make({DataType::TIME_PRECISION}, {precision}));
+        ASSERT_NOK_WITH_MSG(ArrowSchemaValidator::ValidateSchema(*arrow::schema({field})),
+                            "Invalid TIME precision metadata");
+        ASSERT_NOK_WITH_MSG(DataField(0, field).ToJsonString(), "Invalid TIME precision metadata");
+    }
+    auto seconds = DataType::Create(arrow::time32(arrow::TimeUnit::SECOND), true, nullptr);
+    ASSERT_NOK_WITH_MSG(seconds->ToJsonString(), "Only millisecond TIME is supported");
 }
 
 TEST(ArrowSchemaValidatorTest, TestValidateNoRedundantFields) {
