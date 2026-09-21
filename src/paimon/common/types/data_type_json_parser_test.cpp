@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "fmt/format.h"
 #include "gtest/gtest.h"
 #include "paimon/common/data/variant/variant_type_utils.h"
 #include "paimon/common/utils/checked_cast.h"
@@ -226,6 +227,32 @@ TEST(DataTypeJsonParserTest, ParseTypeAtomicTypeSuccess) {
         rapidjson::Value value("TIMESTAMP(8) WITH LOCAL TIME ZONE", invalid_doc.GetAllocator());
         ASSERT_NOK_WITH_MSG(DataTypeJsonParser::ParseType("field_name", value),
                             "only support precision 0/3/6/9 in timestamp type");
+    }
+}
+
+TEST(DataTypeJsonParserTest, ParseTimeType) {
+    std::vector<std::string> types = {"TIME", "TIME WITHOUT TIME ZONE"};
+    for (int32_t precision = 0; precision <= 9; ++precision) {
+        types.push_back(fmt::format("TIME({})", precision));
+        types.push_back(fmt::format("TIME({}) WITHOUT TIME ZONE", precision));
+    }
+    for (const auto& type : types) {
+        for (bool nullable : {true, false}) {
+            std::string type_str = nullable ? type : type + " NOT NULL";
+            SCOPED_TRACE(type_str);
+            rapidjson::Document doc;
+            rapidjson::Value value(type_str.data(), doc.GetAllocator());
+            ASSERT_OK_AND_ASSIGN(auto field, DataTypeJsonParser::ParseType("time", value));
+            ASSERT_TRUE(field->type()->Equals(arrow::time32(arrow::TimeUnit::MILLI)));
+            ASSERT_EQ(field->nullable(), nullable);
+        }
+    }
+    for (const char* type : {"TIME(-1)", "TIME(10)", "TIME(2147483648)", "TIME()", "TIME(3, 0)",
+                             "TIME WITH TIME ZONE", "TIME(3) WITHOUT TIME"}) {
+        SCOPED_TRACE(type);
+        rapidjson::Document doc;
+        rapidjson::Value value(type, doc.GetAllocator());
+        ASSERT_NOK(DataTypeJsonParser::ParseType("time", value));
     }
 }
 

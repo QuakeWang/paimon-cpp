@@ -76,6 +76,25 @@ TEST(ArrowSchemaValidatorTest, TestVectorElementType) {
     }
 }
 
+TEST(ArrowSchemaValidatorTest, TestTimeType) {
+    for (const auto& type :
+         {arrow::time32(arrow::TimeUnit::MILLI), arrow::time32(arrow::TimeUnit::SECOND),
+          arrow::time64(arrow::TimeUnit::MICRO), arrow::time64(arrow::TimeUnit::NANO)}) {
+        SCOPED_TRACE(type->ToString());
+        for (const auto& field_type : {type, arrow::list(type)}) {
+            auto schema = DataField::ConvertDataFieldsToArrowSchema(
+                {DataField(0, arrow::field("time", field_type))});
+            if (type->Equals(arrow::time32(arrow::TimeUnit::MILLI))) {
+                ASSERT_OK(ArrowSchemaValidator::ValidateSchema(*schema));
+                ASSERT_OK(ArrowSchemaValidator::ValidateSchemaWithFieldId(*schema));
+            } else {
+                ASSERT_NOK(ArrowSchemaValidator::ValidateSchema(*schema));
+                ASSERT_NOK(ArrowSchemaValidator::ValidateSchemaWithFieldId(*schema));
+            }
+        }
+    }
+}
+
 TEST(ArrowSchemaValidatorTest, TestValidateNoRedundantFields) {
     auto col1_field = arrow::field("col1", arrow::int64());
     auto col2_field = arrow::field("col2", arrow::int32());

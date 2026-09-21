@@ -34,6 +34,7 @@
 #include "arrow/api.h"
 #include "arrow/array/array_base.h"
 #include "arrow/c/abi.h"
+#include "arrow/c/bridge.h"
 #include "arrow/ipc/json_simple.h"
 #include "gtest/gtest.h"
 #include "paimon/catalog/catalog.h"
@@ -64,6 +65,9 @@
 #include "paimon/defs.h"
 #include "paimon/file_store_commit.h"
 #include "paimon/file_store_write.h"
+#include "paimon/format/file_format.h"
+#include "paimon/format/file_format_factory.h"
+#include "paimon/format/format_writer.h"
 #include "paimon/fs/file_system.h"
 #include "paimon/fs/local/local_file_system.h"
 #include "paimon/memory/memory_pool.h"
@@ -87,6 +91,94 @@
 #include "paimon/write_context.h"
 
 namespace paimon::test {
+
+TEST(TimeReadInteTest, TestParquetTimeColumns) {
+    auto dir = UniqueTestDirectory::Create();
+    ASSERT_TRUE(dir);
+    auto fs = std::make_shared<LocalFileSystem>();
+    std::string table_path = dir->Str();
+    std::string bucket_path = PathUtil::JoinPath(table_path, "bucket-0");
+    ASSERT_OK(fs->Mkdirs(bucket_path));
+    ASSERT_OK(fs->Mkdirs(PathUtil::JoinPath(table_path, "schema")));
+    // PyPaimon writes millisecond values with a TIME(0) table schema.
+    ASSERT_OK(fs->WriteFile(PathUtil::JoinPath(table_path, "schema/schema-0"), R"json({
+        "version": 3, "id": 0,
+        "fields": [{"id": 0, "name": "t0", "type": "TIME(0)"},
+                   {"id": 1, "name": "t3", "type": "TIME(3)"}],
+        "highestFieldId": 1, "partitionKeys": [], "primaryKeys": [],
+        "options": {"file.format": "parquet", "bucket": "-1"}, "timeMillis": 0
+    })json",
+                            /*overwrite=*/false));
+
+    auto time_type = arrow::time32(arrow::TimeUnit::MILLI);
+    auto file_schema =
+        arrow::schema({arrow::field("t0", time_type), arrow::field("t3", time_type)});
+    arrow::Time32Builder time_builder(time_type, arrow::default_memory_pool());
+    ASSERT_TRUE(time_builder.AppendValues({0, 123, 86399999}).ok());
+    ASSERT_TRUE(time_builder.AppendNull().ok());
+    std::shared_ptr<arrow::Array> times;
+    ASSERT_TRUE(time_builder.Finish(&times).ok());
+    auto rows_result = arrow::StructArray::Make({times, times}, file_schema->fields());
+    ASSERT_TRUE(rows_result.ok());
+    auto rows = rows_result.ValueOrDie();
+
+    // Generate only the data file; this test does not require Paimon table-write support.
+    ASSERT_OK_AND_ASSIGN(auto format, FileFormatFactory::Get("parquet", {}));
+    ArrowSchema c_schema;
+    ASSERT_TRUE(arrow::ExportSchema(*file_schema, &c_schema).ok());
+    ASSERT_OK_AND_ASSIGN(auto writer_builder, format->CreateWriterBuilder(&c_schema, 4));
+    std::string file_path = PathUtil::JoinPath(bucket_path, "data-time.parquet");
+    ASSERT_OK_AND_ASSIGN(std::shared_ptr<OutputStream> out,
+                         fs->Create(file_path, /*overwrite=*/false));
+    ASSERT_OK_AND_ASSIGN(
+        auto writer, writer_builder->WithMemoryPool(GetDefaultPool())->Build(out, "uncompressed"));
+    ArrowArray c_array;
+    ASSERT_TRUE(arrow::ExportArray(*rows, &c_array).ok());
+    ASSERT_OK(writer->AddBatch(&c_array));
+    ASSERT_OK(writer->Finish());
+    ASSERT_OK(out->Close());
+
+    ASSERT_OK_AND_ASSIGN(auto file_status, fs->GetFileStatus(file_path));
+    ASSERT_OK_AND_ASSIGN(auto meta,
+                         DataFileMeta::ForAppend("data-time.parquet", file_status.GetLen(), 4,
+                                                 SimpleStats::EmptyStats(), 0, 3,
+                                                 /*schema_id=*/0, FileSource::Append(),
+                                                 /*value_stats_cols=*/std::nullopt,
+                                                 /*external_path=*/std::nullopt,
+                                                 /*first_row_id=*/std::nullopt,
+                                                 /*write_cols=*/std::nullopt));
+    DataSplitImpl::Builder split_builder(BinaryRow::EmptyRow(), 0, bucket_path, {meta});
+    ASSERT_OK_AND_ASSIGN(auto split, split_builder.WithSnapshot(1).RawConvertible(true).Build());
+    auto row_kinds = arrow::MakeArrayFromScalar(arrow::Int8Scalar(0), times->length());
+    ASSERT_TRUE(row_kinds.ok());
+    for (int32_t batch_size : {1, 3}) {
+        for (bool projected : {false, true}) {
+            ReadContextBuilder context_builder(table_path);
+            context_builder.AddOption("read.batch-size", std::to_string(batch_size));
+            if (projected) {
+                context_builder.SetReadFieldNames({"t0"});
+            }
+            ASSERT_OK_AND_ASSIGN(auto context, context_builder.Finish());
+            ASSERT_OK_AND_ASSIGN(auto read, TableRead::Create(std::move(context)));
+            ASSERT_OK_AND_ASSIGN(auto reader, read->CreateReader(split));
+            ASSERT_OK_AND_ASSIGN(auto result,
+                                 ReadResultCollector::CollectResult(std::move(reader)));
+            ASSERT_TRUE(result);
+            arrow::ArrayVector expected_columns = {row_kinds.ValueOrDie(), times};
+            arrow::FieldVector expected_fields = {SpecialFields::ValueKind().ArrowField(),
+                                                  file_schema->field(0)};
+            if (!projected) {
+                expected_columns.push_back(times);
+                expected_fields.push_back(file_schema->field(1));
+            }
+            auto expected = arrow::StructArray::Make(expected_columns, expected_fields);
+            ASSERT_TRUE(expected.ok());
+            ASSERT_TRUE(
+                result->Equals(std::make_shared<arrow::ChunkedArray>(expected.ValueOrDie())))
+                << result->ToString();
+        }
+    }
+}
 
 struct TestParam {
     bool enable_prefetch;

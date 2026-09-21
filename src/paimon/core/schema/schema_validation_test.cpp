@@ -289,9 +289,13 @@ TEST(SchemaValidationTest, TestLanceDataTypes) {
         arrow::field("map", arrow::map(arrow::int32(), arrow::utf8())),
         arrow::field("ltz", arrow::timestamp(arrow::TimeUnit::MICRO, "UTC")),
         VariantTypeUtils::ToArrowField("variant"),
+        arrow::field("time_millis", arrow::time32(arrow::TimeUnit::MILLI)),
+        arrow::field("nested_time",
+                     arrow::struct_({arrow::field(
+                         "values", arrow::list(arrow::time32(arrow::TimeUnit::MILLI)))})),
     };
-    std::vector<std::string> expected_errors = {"type MAP", "LOCAL_ZONED_TIMESTAMP",
-                                                "type VARIANT"};
+    std::vector<std::string> expected_errors = {"type MAP", "LOCAL_ZONED_TIMESTAMP", "type VARIANT",
+                                                "type time32", "type time32"};
     for (size_t i = 0; i < unsupported_fields.size(); ++i) {
         ASSERT_OK_AND_ASSIGN(
             table_schema,
@@ -303,14 +307,13 @@ TEST(SchemaValidationTest, TestLanceDataTypes) {
 
     for (const auto& field : arrow::FieldVector{
              arrow::field("time_seconds", arrow::time32(arrow::TimeUnit::SECOND)),
-             arrow::field("time_millis", arrow::time32(arrow::TimeUnit::MILLI)),
              arrow::field("nested_time",
                           arrow::struct_({arrow::field(
-                              "values", arrow::list(arrow::time32(arrow::TimeUnit::MILLI)))}))}) {
+                              "values", arrow::list(arrow::time32(arrow::TimeUnit::SECOND)))}))}) {
         ASSERT_NOK_WITH_MSG(
             TableSchema::Create(/*schema_id=*/0, arrow::schema({field}),
                                 /*partition_keys=*/{}, /*primary_keys=*/{}, options),
-            "Unknown or unsupported arrow type: time32");
+            "Only millisecond TIME is supported");
     }
 
     for (const auto& [option_key, option_value] : std::vector<std::pair<std::string, std::string>>{

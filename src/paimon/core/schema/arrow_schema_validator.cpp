@@ -123,6 +123,7 @@ Status ArrowSchemaValidator::ValidateDataTypeWithFieldId(
         case arrow::Type::type::DATE32:
         case arrow::Type::type::DECIMAL128:
         case arrow::Type::type::TIMESTAMP:
+        case arrow::Type::type::TIME32:
             return Status::OK();
         case arrow::Type::type::LIST: {
             const auto& value_field = checked_cast<arrow::BaseListType*>(type.get())->value_field();
@@ -207,6 +208,13 @@ Status ArrowSchemaValidator::ValidateField(const std::shared_ptr<arrow::Field>& 
         case arrow::Type::type::BINARY:
         case arrow::Type::type::DATE32:
         case arrow::Type::type::TIMESTAMP:
+            break;
+        case arrow::Type::type::TIME32:
+            if (checked_cast<const arrow::Time32Type&>(*field->type()).unit() !=
+                arrow::TimeUnit::MILLI) {
+                return Status::Invalid("Only millisecond TIME is supported: ",
+                                       field->type()->ToString());
+            }
             break;
         case arrow::Type::type::DECIMAL128:
             PAIMON_RETURN_NOT_OK(DecimalUtils::CheckDecimalType(*field->type()));
