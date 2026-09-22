@@ -766,7 +766,7 @@ Result<std::shared_ptr<arrow::Field>> DataTypeJsonParser::ParseAtomicTypeField(
     } else if (attributes.time_precision) {
         return arrow::field(
             name, type, nullable,
-            arrow::KeyValueMetadata::Make({DataType::TIME_PRECISION},
+            arrow::KeyValueMetadata::Make({DataType::kTimePrecision},
                                           {std::to_string(attributes.time_precision.value())}));
     } else {
         return arrow::field(name, type, nullable);

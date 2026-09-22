@@ -41,6 +41,10 @@
 
 namespace paimon {
 
+Result<int32_t> DataType::GetTimePrecision(const arrow::Field& field) {
+    return GetTimePrecision(field.type(), field.metadata());
+}
+
 Result<int32_t> DataType::GetTimePrecision(
     const std::shared_ptr<arrow::DataType>& type,
     const std::shared_ptr<const arrow::KeyValueMetadata>& metadata) {
@@ -48,10 +52,10 @@ Result<int32_t> DataType::GetTimePrecision(
         checked_cast<const arrow::Time32Type&>(*type).unit() != arrow::TimeUnit::MILLI) {
         return Status::Invalid("Only millisecond TIME is supported: ", type->ToString());
     }
-    if (!metadata || !metadata->Contains(TIME_PRECISION)) {
+    if (!metadata || !metadata->Contains(kTimePrecision)) {
         return 0;
     }
-    PAIMON_ASSIGN_OR_RAISE_FROM_ARROW(std::string precision, metadata->Get(TIME_PRECISION));
+    PAIMON_ASSIGN_OR_RAISE_FROM_ARROW(std::string precision, metadata->Get(kTimePrecision));
     if (precision.size() != 1 || precision[0] < '0' || precision[0] > '9') {
         return Status::Invalid("Invalid TIME precision metadata: ", precision);
     }

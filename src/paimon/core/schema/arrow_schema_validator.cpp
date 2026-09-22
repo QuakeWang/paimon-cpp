@@ -211,8 +211,7 @@ Status ArrowSchemaValidator::ValidateField(const std::shared_ptr<arrow::Field>& 
         case arrow::Type::type::TIMESTAMP:
             break;
         case arrow::Type::type::TIME32:
-            PAIMON_RETURN_NOT_OK(
-                DataType::GetTimePrecision(field->type(), field->metadata()).status());
+            PAIMON_RETURN_NOT_OK(DataType::GetTimePrecision(*field));
             break;
         case arrow::Type::type::DECIMAL128:
             PAIMON_RETURN_NOT_OK(DecimalUtils::CheckDecimalType(*field->type()));

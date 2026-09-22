@@ -101,7 +101,7 @@ TEST(ArrowSchemaValidatorTest, TestInvalidTimePrecision) {
         SCOPED_TRACE(precision);
         auto field =
             arrow::field("time", arrow::time32(arrow::TimeUnit::MILLI), true,
-                         arrow::KeyValueMetadata::Make({DataType::TIME_PRECISION}, {precision}));
+                         arrow::KeyValueMetadata::Make({DataType::kTimePrecision}, {precision}));
         ASSERT_NOK_WITH_MSG(ArrowSchemaValidator::ValidateSchema(*arrow::schema({field})),
                             "Invalid TIME precision metadata");
         ASSERT_NOK_WITH_MSG(DataField(0, field).ToJsonString(), "Invalid TIME precision metadata");

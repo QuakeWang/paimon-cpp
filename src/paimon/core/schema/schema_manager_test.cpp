@@ -66,15 +66,13 @@ TEST(SchemaManagerTest, TimePrecisionRoundTrip) {
     ASSERT_EQ(serialized, reserialized);
     const auto& restored_fields = reloaded->Fields();
     for (int32_t i = 0; i < 20; ++i) {
-        ASSERT_OK_AND_ASSIGN(auto precision, DataType::GetTimePrecision(
-                                                 restored_fields[i].Type(),
-                                                 restored_fields[i].ArrowField()->metadata()));
+        ASSERT_OK_AND_ASSIGN(auto precision,
+                             DataType::GetTimePrecision(*restored_fields[i].ArrowField()));
         ASSERT_EQ(precision, i / 2);
         ASSERT_EQ(restored_fields[i].ArrowField()->nullable(), i % 2 == 0);
     }
     ASSERT_OK_AND_ASSIGN(auto default_precision,
-                         DataType::GetTimePrecision(restored_fields[20].Type(),
-                                                    restored_fields[20].ArrowField()->metadata()));
+                         DataType::GetTimePrecision(*restored_fields[20].ArrowField()));
     ASSERT_EQ(default_precision, 0);
     for (int32_t i = 21; i < 24; ++i) {
         SCOPED_TRACE(i);
@@ -82,6 +80,19 @@ TEST(SchemaManagerTest, TimePrecisionRoundTrip) {
                         ->Equals(DataField::ConvertDataFieldToArrowField(restored_fields[i]),
                                  /*check_metadata=*/true));
     }
+}
+
+TEST(SchemaManagerTest, RejectTimePartitionKey) {
+    auto dir = UniqueTestDirectory::Create();
+    ASSERT_TRUE(dir);
+    SchemaManager manager(std::make_shared<LocalFileSystem>(), dir->Str());
+    auto schema = arrow::schema({arrow::field("id", arrow::int32()),
+                                 arrow::field("time", arrow::time32(arrow::TimeUnit::MILLI))});
+    ASSERT_NOK_WITH_MSG(
+        manager.CreateTable(schema, {"time"}, {}, {{"file.format", "parquet"}, {"bucket", "-1"}}),
+        "partition field time cannot be TIME");
+    ASSERT_OK_AND_ASSIGN(auto latest, manager.Latest());
+    ASSERT_FALSE(latest.has_value());
 }
 
 TEST(SchemaManagerTest, ConcurrentHistoricalSchemaReads) {
