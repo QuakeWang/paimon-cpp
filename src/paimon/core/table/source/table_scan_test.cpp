@@ -95,10 +95,8 @@ TEST(TableScanTest, TestStreamingSnapshotsRemoved) {
 
     LocalFileSystem fs;
     ASSERT_OK(fs.Delete(dir->Str() + "/snapshot", /*recursive=*/true));
-    auto result = table_scan->CreatePlan();
-    ASSERT_FALSE(result.ok());
-    ASSERT_TRUE(result.status().IsInvalid());
-    ASSERT_NOK_WITH_MSG(result, "The next snapshot id is 6, while the latest snapshot id is null");
+    ASSERT_NOK_WITH_MSG(table_scan->CreatePlan(),
+                        "The next snapshot id is 6, while the latest snapshot id is null");
 }
 
 TEST(TableScanTest, TestStreamingNextSnapshotBoundary) {
